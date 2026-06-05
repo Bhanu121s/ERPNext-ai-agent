@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pydantic
+pymysql
+ollama
+
+# Semantic RAG stack
+sentence-transformers   # local embeddings — all-MiniLM-L6-v2 (~90MB download once)
+faiss-cpu               # fast vector similarity search
+chromadb                # persistent vector store
+

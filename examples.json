@@ -1,0 +1,146 @@
+[
+  {
+    "question": "which supplier do i owe the most money to",
+    "sql": "SELECT `supplier`, SUM(`outstanding_amount`) AS `total_due` FROM `tabPurchase Invoice` WHERE `docstatus` = 1 AND `outstanding_amount` > 0 GROUP BY `supplier` ORDER BY `total_due` DESC LIMIT 1"
+  },
+  {
+    "question": "which customer owes me the most money",
+    "sql": "SELECT `customer`, SUM(`outstanding_amount`) AS `total_receivable` FROM `tabSales Invoice` WHERE `docstatus` = 1 AND `outstanding_amount` > 0 GROUP BY `customer` ORDER BY `total_receivable` DESC LIMIT 1"
+  },
+  {
+    "question": "what is the total outstanding amount i owe to all suppliers",
+    "sql": "SELECT SUM(`outstanding_amount`) AS `total_payable` FROM `tabPurchase Invoice` WHERE `docstatus` = 1 AND `outstanding_amount` > 0"
+  },
+  {
+    "question": "total amount receivable from all customers",
+    "sql": "SELECT SUM(`outstanding_amount`) AS `total_receivable` FROM `tabSales Invoice` WHERE `docstatus` = 1 AND `outstanding_amount` > 0"
+  },
+  {
+    "question": "how many unpaid purchase invoices do i have for 3n composite products llp",
+    "sql": "SELECT COUNT(*) AS `unpaid_count` FROM `tabPurchase Invoice` WHERE `docstatus` = 1 AND `status` IN ('Unpaid', 'Overdue') AND `supplier` LIKE '%3n Composite%'"
+  },
+  {
+    "question": "how many invoices are overdue",
+    "sql": "SELECT COUNT(*) AS `overdue_count` FROM `tabSales Invoice` WHERE `docstatus` = 1 AND `status` = 'Overdue'"
+  },
+  {
+    "question": "list all unpaid purchase invoices",
+    "sql": "SELECT `name`, `supplier`, `grand_total`, `outstanding_amount`, `due_date` FROM `tabPurchase Invoice` WHERE `docstatus` = 1 AND `status` IN ('Unpaid', 'Overdue') ORDER BY `due_date` ASC"
+  },
+  {
+    "question": "list all overdue sales invoices",
+    "sql": "SELECT `name`, `customer`, `grand_total`, `outstanding_amount`, `due_date` FROM `tabSales Invoice` WHERE `docstatus` = 1 AND `status` = 'Overdue' ORDER BY `due_date` ASC"
+  },
+  {
+    "question": "how much tax did Aurobindo Realty & Infrastructure Pvt Ltd pay",
+    "sql": "SELECT SUM(`total_taxes_and_charges`) AS `total_tax` FROM `tabSales Invoice` WHERE `docstatus` = 1 AND `customer` LIKE '%Golden Twist%'"
+  },
+  {
+    "question": "how much total tax was charged on purchase invoices from acme corp",
+    "sql": "SELECT SUM(`total_taxes_and_charges`) AS `total_tax` FROM `tabPurchase Invoice` WHERE `docstatus` = 1 AND `supplier` LIKE '%Acme Corp%'"
+  },
+  {
+    "question": "which item has been purchased the most",
+    "sql": "SELECT `item_code`, SUM(`qty`) AS `total_qty` FROM `tabPurchase Invoice Item` WHERE `docstatus` = 1 GROUP BY `item_code` ORDER BY `total_qty` DESC LIMIT 1"
+  },
+  {
+    "question": "which item has been sold the most",
+    "sql": "SELECT `item_code`, SUM(`qty`) AS `total_qty` FROM `tabSales Invoice Item` WHERE `docstatus` = 1 GROUP BY `item_code` ORDER BY `total_qty` DESC LIMIT 1"
+  },
+  {
+    "question": "what is the total purchase amount this month",
+    "sql": "SELECT SUM(`grand_total`) AS `total_purchases` FROM `tabPurchase Invoice` WHERE `docstatus` = 1 AND MONTH(`posting_date`) = MONTH(CURDATE()) AND YEAR(`posting_date`) = YEAR(CURDATE())"
+  },
+  {
+    "question": "what is the total sales amount this month",
+    "sql": "SELECT SUM(`grand_total`) AS `total_sales` FROM `tabSales Invoice` WHERE `docstatus` = 1 AND MONTH(`posting_date`) = MONTH(CURDATE()) AND YEAR(`posting_date`) = YEAR(CURDATE())"
+  },
+  {
+    "question": "what is the total sales amount this year",
+    "sql": "SELECT SUM(`grand_total`) AS `total_sales` FROM `tabSales Invoice` WHERE `docstatus` = 1 AND YEAR(`posting_date`) = YEAR(CURDATE())"
+  },
+  {
+    "question": "what is the total purchase amount this year",
+    "sql": "SELECT SUM(`grand_total`) AS `total_purchases` FROM `tabPurchase Invoice` WHERE `docstatus` = 1 AND YEAR(`posting_date`) = YEAR(CURDATE())"
+  },
+  {
+    "question": "which month had the highest sales",
+    "sql": "SELECT MONTH(`posting_date`) AS `month`, YEAR(`posting_date`) AS `year`, SUM(`grand_total`) AS `total_sales` FROM `tabSales Invoice` WHERE `docstatus` = 1 GROUP BY YEAR(`posting_date`), MONTH(`posting_date`) ORDER BY `total_sales` DESC LIMIT 1"
+  },
+  {
+    "question": "which month had the highest purchases",
+    "sql": "SELECT MONTH(`posting_date`) AS `month`, YEAR(`posting_date`) AS `year`, SUM(`grand_total`) AS `total_purchases` FROM `tabPurchase Invoice` WHERE `docstatus` = 1 GROUP BY YEAR(`posting_date`), MONTH(`posting_date`) ORDER BY `total_purchases` DESC LIMIT 1"
+  },
+  {
+    "question": "how many customers do i have",
+    "sql": "SELECT COUNT(*) AS `total_customers` FROM `tabCustomer` WHERE `disabled` = 0"
+  },
+  {
+    "question": "how many suppliers do i have",
+    "sql": "SELECT COUNT(*) AS `total_suppliers` FROM `tabSupplier` WHERE `disabled` = 0"
+  },
+  {
+    "question": "list all customers",
+    "sql": "SELECT `name`, `customer_name`, `customer_type`, `customer_group` FROM `tabCustomer` WHERE `disabled` = 0 ORDER BY `name` ASC"
+  },
+  {
+    "question": "list all suppliers",
+    "sql": "SELECT `name`, `supplier_name`, `supplier_type`, `supplier_group` FROM `tabSupplier` WHERE `disabled` = 0 ORDER BY `name` ASC"
+  },
+  {
+    "question": "what is the oldest unpaid purchase invoice",
+    "sql": "SELECT `name`, `supplier`, `grand_total`, `outstanding_amount`, `posting_date`, `due_date` FROM `tabPurchase Invoice` WHERE `docstatus` = 1 AND `status` IN ('Unpaid', 'Overdue') ORDER BY `posting_date` ASC LIMIT 1"
+  },
+  {
+    "question": "what is the latest sales invoice",
+    "sql": "SELECT `name`, `customer`, `grand_total`, `posting_date`, `status` FROM `tabSales Invoice` WHERE `docstatus` = 1 ORDER BY `posting_date` DESC LIMIT 1"
+  },
+  {
+    "question": "top 5 customers by revenue",
+    "sql": "SELECT `customer`, SUM(`grand_total`) AS `total_revenue` FROM `tabSales Invoice` WHERE `docstatus` = 1 GROUP BY `customer` ORDER BY `total_revenue` DESC LIMIT 5"
+  },
+  {
+    "question": "top 5 suppliers by purchase amount",
+    "sql": "SELECT `supplier`, SUM(`grand_total`) AS `total_purchases` FROM `tabPurchase Invoice` WHERE `docstatus` = 1 GROUP BY `supplier` ORDER BY `total_purchases` DESC LIMIT 5"
+  },
+  {
+    "question": "how many purchase invoices do i have for supplier xyz",
+    "sql": "SELECT COUNT(*) AS `invoice_count` FROM `tabPurchase Invoice` WHERE `docstatus` = 1 AND `supplier` LIKE '%xyz%'"
+  },
+  {
+    "question": "what is the total amount paid to supplier xyz",
+    "sql": "SELECT SUM(`grand_total`) AS `total_paid` FROM `tabPurchase Invoice` WHERE `docstatus` = 1 AND `supplier` LIKE '%xyz%'"
+  },
+  {
+    "question": "how many employees do i have",
+    "sql": "SELECT COUNT(*) AS `total_employees` FROM `tabEmployee` WHERE `status` = 'Active'"
+  },
+  {
+    "question": "list all active employees",
+    "sql": "SELECT `name`, `employee_name`, `designation`, `department`, `date_of_joining` FROM `tabEmployee` WHERE `status` = 'Active' ORDER BY `employee_name` ASC"
+  },
+  {
+    "question": "total payments made this month",
+    "sql": "SELECT SUM(`paid_amount`) AS `total_payments` FROM `tabPayment Entry` WHERE `docstatus` = 1 AND `payment_type` = 'Pay' AND MONTH(`posting_date`) = MONTH(CURDATE()) AND YEAR(`posting_date`) = YEAR(CURDATE())"
+  },
+  {
+    "question": "total payments received this month",
+    "sql": "SELECT SUM(`paid_amount`) AS `total_received` FROM `tabPayment Entry` WHERE `docstatus` = 1 AND `payment_type` = 'Receive' AND MONTH(`posting_date`) = MONTH(CURDATE()) AND YEAR(`posting_date`) = YEAR(CURDATE())"
+  },
+  {
+    "question": "show me all invoices for customer abc",
+    "sql": "SELECT `name`, `grand_total`, `outstanding_amount`, `status`, `posting_date`, `due_date` FROM `tabSales Invoice` WHERE `docstatus` = 1 AND `customer` LIKE '%abc%' ORDER BY `posting_date` DESC"
+  },
+  {
+    "question": "show me all purchase invoices for supplier abc",
+    "sql": "SELECT `name`, `grand_total`, `outstanding_amount`, `status`, `posting_date`, `due_date` FROM `tabPurchase Invoice` WHERE `docstatus` = 1 AND `supplier` LIKE '%abc%' ORDER BY `posting_date` DESC"
+  },
+  {
+    "question": "what items were on purchase invoice PINV-0001",
+    "sql": "SELECT `item_code`, `item_name`, `qty`, `rate`, `amount` FROM `tabPurchase Invoice Item` WHERE `parent` = 'PINV-0001'"
+  },
+  {
+    "question": "what items were on sales invoice INV-0001",
+    "sql": "SELECT `item_code`, `item_name`, `qty`, `rate`, `amount` FROM `tabSales Invoice Item` WHERE `parent` = 'INV-0001'"
+  }
+]

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "erpnext": {
+      "command": "python",
+      "args": ["C:\\Users\\Bhanu\\OneDrive\\Desktop\\ola local py\\mcp_server.py"]
+    }
+  }
+}
