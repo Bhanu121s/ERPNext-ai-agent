@@ -213,10 +213,14 @@ def run_sql(query: str) -> str:
       WRONG : SELECT grand_total FROM tabSales Invoice WHERE docstatus=1
       CORRECT: SELECT `grand_total` FROM `tabSales Invoice` WHERE `docstatus`=1
 
-    RULE 2 â€” ALWAYS FILTER docstatus = 1:
+    RULE 2 â€” DOCSTATUS FILTER:
       All transactional tables have draft/cancelled records (docstatus 0 and 2).
-      Without this filter you count cancelled invoices too.
-      ALWAYS add: WHERE `docstatus` = 1
+      By default add: WHERE `docstatus` = 1
+      This excludes drafts and cancelled invoices for normal business totals.
+      If the user asks for cancelled invoices, all invoices, or a status
+      breakdown including cancelled, use `docstatus` IN (1, 2) and include
+      cancelled counts with `docstatus` = 2 OR `status` = 'Cancelled'.
+      Never include drafts (`docstatus` = 0) unless the user explicitly asks.
       Tables needing this: tabPurchase Invoice, tabSales Invoice,
       tabPayment Entry, tabStock Entry, tabJournal Entry,
       tabPurchase Invoice Item, tabSales Invoice Item
@@ -244,6 +248,7 @@ def run_sql(query: str) -> str:
     RULE 5 â€” STATUS FILTERS:
       Overdue only         : WHERE `status` = 'Overdue'
       Unpaid only          : WHERE `status` = 'Unpaid'
+      Cancelled only       : WHERE (`docstatus` = 2 OR `status` = 'Cancelled')
       Both unpaid+overdue  : WHERE `status` IN ('Unpaid', 'Overdue')
       ONLY use IN ('Unpaid','Overdue') when user says "unpaid or overdue" or "outstanding".
       When user says just "unpaid" â†’ use ONLY status = 'Unpaid'
@@ -321,6 +326,24 @@ def run_sql(query: str) -> str:
                   AND `status` = 'Overdue'
     NOTE: Report both counts, or the combined total if the user asked broadly.
     NOTE: Do NOT search only tabSales Invoice for this question.
+
+    Q: how many invoices does Shadab Ahmer have by status
+    ACTION: invoice side is ambiguous and cancelled invoices are requested/needed.
+            Use run_sql twice with docstatus IN (1, 2).
+    Sales SQL: SELECT COUNT(*) AS `invoice_count`,
+                      SUM(CASE WHEN `docstatus` = 1 AND `status` = 'Unpaid' THEN 1 ELSE 0 END) AS `unpaid_count`,
+                      SUM(CASE WHEN `docstatus` = 1 AND `status` = 'Overdue' THEN 1 ELSE 0 END) AS `overdue_count`,
+                      SUM(CASE WHEN `docstatus` = 2 OR `status` = 'Cancelled' THEN 1 ELSE 0 END) AS `cancelled_count`
+               FROM `tabSales Invoice`
+               WHERE `docstatus` IN (1, 2)
+               AND `customer` LIKE '%Shadab Ahmer%'
+    Purchase SQL: SELECT COUNT(*) AS `invoice_count`,
+                         SUM(CASE WHEN `docstatus` = 1 AND `status` = 'Unpaid' THEN 1 ELSE 0 END) AS `unpaid_count`,
+                         SUM(CASE WHEN `docstatus` = 1 AND `status` = 'Overdue' THEN 1 ELSE 0 END) AS `overdue_count`,
+                         SUM(CASE WHEN `docstatus` = 2 OR `status` = 'Cancelled' THEN 1 ELSE 0 END) AS `cancelled_count`
+                  FROM `tabPurchase Invoice`
+                  WHERE `docstatus` IN (1, 2)
+                  AND `supplier` LIKE '%Shadab Ahmer%'
 
     Q: who has the most unpaid invoices
     ACTION: invoice side is ambiguous and this is a ranking question.
@@ -436,9 +459,13 @@ def search_entity(name: str) -> str:
     This is the automatic dual-table retry â€” always call this before
     giving up on a name-based question.
 
-    Returns invoice count, total billed, outstanding, and tax for
-    the entity from whichever table(s) have data.
+    Returns invoice count, status breakdown, total billed, outstanding,
+    and tax for the entity in both sales and purchase tables.
+
+    Entity summaries include submitted and cancelled invoices:
+    docstatus IN (1, 2). Draft invoices are excluded.
     """
+    safe_name = str(name).replace("\\", "\\\\").replace("'", "''")
 
     # ------------------------------------------------------------------
     # INVOICE ID DETECTION â€” handle SINV-XXXX / PINV-XXXX / INV-XXXX
@@ -448,9 +475,9 @@ def search_entity(name: str) -> str:
         # Try Sales Invoice first
         s_rows, _ = _execute(f"""
             SELECT `name`, `customer`, `posting_date`, `due_date`,
-                   `grand_total`, `outstanding_amount`, `status`
+                   `grand_total`, `outstanding_amount`, `status`, `docstatus`
             FROM `tabSales Invoice`
-            WHERE `docstatus` = 1 AND `name` = '{name}'
+            WHERE `docstatus` IN (1, 2) AND `name` = '{safe_name}'
         """)
         if s_rows:
             return f"Sales Invoice '{name}':\n" + _fmt(s_rows)
@@ -458,9 +485,9 @@ def search_entity(name: str) -> str:
         # Try Purchase Invoice
         p_rows, _ = _execute(f"""
             SELECT `name`, `supplier`, `posting_date`, `due_date`,
-                   `grand_total`, `outstanding_amount`, `status`
+                   `grand_total`, `outstanding_amount`, `status`, `docstatus`
             FROM `tabPurchase Invoice`
-            WHERE `docstatus` = 1 AND `name` = '{name}'
+            WHERE `docstatus` IN (1, 2) AND `name` = '{safe_name}'
         """)
         if p_rows:
             return f"Purchase Invoice '{name}':\n" + _fmt(p_rows)
@@ -472,47 +499,57 @@ def search_entity(name: str) -> str:
     # ------------------------------------------------------------------
     results = []
 
-    # Check as customer
-    s_rows, _ = _execute(f"""
-        SELECT 'Customer' AS `role`,
-               COUNT(*) AS `invoice_count`,
-               SUM(`grand_total`) AS `total_billed`,
-               SUM(`outstanding_amount`) AS `total_outstanding`,
-               SUM(`total_taxes_and_charges`) AS `total_tax`
-        FROM `tabSales Invoice`
-        WHERE `docstatus` = 1 AND `customer` LIKE '%{name}%'
-    """)
-    if s_rows and s_rows[0].get("invoice_count", 0):
-        r = s_rows[0]
-        line = ["Found as CUSTOMER"]
-        if r.get("invoice_count"): line.append(f"Invoices: {r['invoice_count']}")
-        if r.get("total_billed"):  line.append(f"Total Billed: â‚¹{r['total_billed']:,.2f}")
+    def summarize_role(label: str, table: str, party_col: str, billed_label: str, due_label: str):
+        rows, _ = _execute(f"""
+            SELECT COUNT(*) AS `invoice_count`,
+                   SUM(CASE WHEN `docstatus` = 1 AND `status` = 'Unpaid' THEN 1 ELSE 0 END) AS `unpaid_count`,
+                   SUM(CASE WHEN `docstatus` = 1 AND `status` = 'Overdue' THEN 1 ELSE 0 END) AS `overdue_count`,
+                   SUM(CASE WHEN `docstatus` = 2 OR `status` = 'Cancelled' THEN 1 ELSE 0 END) AS `cancelled_count`,
+                   SUM(CASE WHEN `docstatus` = 1 AND `status` = 'Paid' THEN 1 ELSE 0 END) AS `paid_count`,
+                   SUM(CASE
+                         WHEN `docstatus` = 1
+                          AND `status` NOT IN ('Unpaid', 'Overdue', 'Paid', 'Cancelled')
+                         THEN 1 ELSE 0
+                       END) AS `other_count`,
+                   SUM(CASE WHEN `docstatus` = 1 THEN `grand_total` ELSE 0 END) AS `total_billed`,
+                   SUM(CASE WHEN `docstatus` = 1 THEN `outstanding_amount` ELSE 0 END) AS `total_outstanding`,
+                   SUM(CASE WHEN `docstatus` = 1 THEN `total_taxes_and_charges` ELSE 0 END) AS `total_tax`
+            FROM `{table}`
+            WHERE `docstatus` IN (1, 2) AND `{party_col}` LIKE '%{safe_name}%'
+        """)
+        r = rows[0] if rows else {}
+        count = int(r.get("invoice_count") or 0)
+        parts = [
+            f"Found as {label}",
+            f"Invoices: {count}",
+            f"Unpaid: {int(r.get('unpaid_count') or 0)}",
+            f"Overdue: {int(r.get('overdue_count') or 0)}",
+            f"Cancelled: {int(r.get('cancelled_count') or 0)}",
+        ]
+        paid_count = int(r.get("paid_count") or 0)
+        other_count = int(r.get("other_count") or 0)
+        if paid_count:
+            parts.append(f"Paid: {paid_count}")
+        if other_count:
+            parts.append(f"Other submitted statuses: {other_count}")
+        if r.get("total_billed"):
+            parts.append(f"{billed_label} (submitted only): â‚¹{r['total_billed']:,.2f}")
         if r.get("total_outstanding") and r["total_outstanding"] > 0:
-            line.append(f"Outstanding: â‚¹{r['total_outstanding']:,.2f}")
+            parts.append(f"{due_label} (submitted only): â‚¹{r['total_outstanding']:,.2f}")
         if r.get("total_tax") and r["total_tax"] > 0:
-            line.append(f"Tax: â‚¹{r['total_tax']:,.2f}")
-        results.append(" | ".join(line))
+            parts.append(f"Tax (submitted only): â‚¹{r['total_tax']:,.2f}")
+        return count, " | ".join(parts)
 
-    # Check as supplier
-    p_rows, _ = _execute(f"""
-        SELECT 'Supplier' AS `role`,
-               COUNT(*) AS `invoice_count`,
-               SUM(`grand_total`) AS `total_billed`,
-               SUM(`outstanding_amount`) AS `total_outstanding`,
-               SUM(`total_taxes_and_charges`) AS `total_tax`
-        FROM `tabPurchase Invoice`
-        WHERE `docstatus` = 1 AND `supplier` LIKE '%{name}%'
-    """)
-    if p_rows and p_rows[0].get("invoice_count", 0):
-        r = p_rows[0]
-        line = ["Found as SUPPLIER"]
-        if r.get("invoice_count"): line.append(f"Invoices: {r['invoice_count']}")
-        if r.get("total_billed"):  line.append(f"Total Purchased: â‚¹{r['total_billed']:,.2f}")
-        if r.get("total_outstanding") and r["total_outstanding"] > 0:
-            line.append(f"Payable: â‚¹{r['total_outstanding']:,.2f}")
-        if r.get("total_tax") and r["total_tax"] > 0:
-            line.append(f"Tax: â‚¹{r['total_tax']:,.2f}")
-        results.append(" | ".join(line))
+    customer_count, customer_line = summarize_role(
+        "CUSTOMER", "tabSales Invoice", "customer", "Total Billed", "Outstanding"
+    )
+    supplier_count, supplier_line = summarize_role(
+        "SUPPLIER", "tabPurchase Invoice", "supplier", "Total Purchased", "Payable"
+    )
+
+    if customer_count or supplier_count:
+        results.append(customer_line)
+        results.append(supplier_line)
 
     if not results:
         return f"NO_RESULTS: '{name}' not found in Sales or Purchase invoices."

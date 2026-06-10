@@ -123,6 +123,9 @@ UNPAID / OVERDUE INVOICE RULES:
   run two separate queries: tabSales Invoice by customer and tabPurchase Invoice by supplier.
   Then report both results or a combined answer if the user asked broadly.
 - For unpaid use status = 'Unpaid'. For overdue use status = 'Overdue'.
+- For cancelled use docstatus = 2 OR status = 'Cancelled'.
+- For status breakdowns that should include cancelled invoices, use docstatus IN (1, 2)
+  and count each category with SUM(CASE WHEN ... THEN 1 ELSE 0 END).
 - For unpaid or overdue, outstanding, receivable, or payable, use status IN ('Unpaid','Overdue')
   or outstanding_amount > 0 as appropriate.
 - For who has most/top/highest unpaid invoices, use GROUP BY, COUNT(*), ORDER BY count DESC, and LIMIT.
