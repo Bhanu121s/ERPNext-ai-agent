@@ -1,4 +1,4 @@
-
+﻿
 import json
 import re
 import sys
@@ -27,7 +27,7 @@ ollama_client = ollama.Client(host=OLLAMA_HOST)
 
 
 def get_transport() -> PythonStdioTransport:
-    """Fresh transport instance per call — required for stdio."""
+    """Fresh transport instance per call â€” required for stdio."""
     return PythonStdioTransport(MCP_SERVER_PATH)
 
 
@@ -88,12 +88,12 @@ You have tools that query a live MariaDB database.
 BEHAVIOUR RULES:
 1. Always use tools to get real data. Never guess or invent numbers.
 2. When run_sql returns NO_RESULTS for a name, immediately call
-   search_entity — it checks both sales AND purchase tables.
+   search_entity â€” it checks both sales AND purchase tables.
 3. NEVER add date filters unless the user mentions a date, month,
    year, or time period. "how many invoices does X have" = ALL records.
-4. NEVER say "as of [date]" — data is live from the database.
+4. NEVER say "as of [date]" â€” data is live from the database.
 5. NEVER say "I don't have information" if a tool can fetch it.
-6. Show monetary values as ₹ with comma formatting.
+6. Show monetary values as â‚¹ with comma formatting.
 7. Summarize tool results clearly in plain English.
 8. When displaying ranked results (top N), always show ALL N rows.
    Never truncate, merge, or replace items with placeholders.
@@ -101,22 +101,33 @@ BEHAVIOUR RULES:
 INVOICE ID vs ENTITY NAME:
 - If user provides an invoice ID (starts with SINV-, PINV-, INV-),
   use run_sql with WHERE `name` = 'SINV-XXXX' or call search_entity.
-  NEVER use LIKE for invoice IDs — use exact match.
+  NEVER use LIKE for invoice IDs â€” use exact match.
 - search_entity is for customer/supplier NAMES only (e.g. 'FMS Traders').
 - For invoice IDs, prefer: 
   SELECT `due_date`,`status`,`outstanding_amount` 
   FROM `tabSales Invoice` WHERE `name` = 'SINV-XXXX' AND `docstatus`=1
 
 TOOL GUIDE:
-  run_sql        → write and run a SELECT query
-  search_entity  → find a name in both customer + supplier tables
-  get_schema     → check exact column names before writing SQL
-  get_summary    → full business dashboard (no SQL needed)
-  get_unpaid     → unpaid/overdue invoice list (no SQL needed)
-  get_top        → top customers/suppliers ranking (no SQL needed)
-  get_trend      → monthly sales/purchase trend (no SQL needed)
+  run_sql        â†’ write and run a SELECT query
+  search_entity  â†’ find a name in both customer + supplier tables
+  get_schema     â†’ check exact column names before writing SQL
+  get_summary    â†’ full business dashboard (no SQL needed)
+  get_top        â†’ top customers/suppliers ranking (no SQL needed)
+  get_trend      â†’ monthly sales/purchase trend (no SQL needed)
   
-  NOTE: tabSales Invoice Item — use `qty` for unit quantities, `amount`
+
+UNPAID / OVERDUE INVOICE RULES:
+- Use run_sql for all unpaid, overdue, outstanding, receivable, and payable invoice questions.
+  There is no separate unpaid tool.
+- If user says only invoice/invoices and does not clearly say sales/customer or purchase/supplier,
+  run two separate queries: tabSales Invoice by customer and tabPurchase Invoice by supplier.
+  Then report both results or a combined answer if the user asked broadly.
+- For unpaid use status = 'Unpaid'. For overdue use status = 'Overdue'.
+- For unpaid or overdue, outstanding, receivable, or payable, use status IN ('Unpaid','Overdue')
+  or outstanding_amount > 0 as appropriate.
+- For who has most/top/highest unpaid invoices, use GROUP BY, COUNT(*), ORDER BY count DESC, and LIMIT.
+  Do not list a few invoices and infer.
+  NOTE: tabSales Invoice Item â€” use `qty` for unit quantities, `amount`
   for rupee value. SUM(qty) returns units sold, SUM(amount) returns revenue.
   """
 
@@ -179,13 +190,13 @@ async def answer_question(question: str) -> str:
                 except Exception:
                     pass
 
-        # No tool calls → model gave final answer
+        # No tool calls â†’ model gave final answer
         if not tool_calls:
             if last_tool_result:
                 print(f"  [Done in round {round_num + 1}]")
                 return _format_final(last_tool_result, question)
             if content and re.search(r'^\s*\{\s*"name"\s*:', content):
-                print(f"  [Final content is raw JSON — no tool result]")
+                print(f"  [Final content is raw JSON â€” no tool result]")
                 return "No answer found."
             print(f"  [Done in round {round_num + 1}]")
             return content or "No answer found. Please rephrase your question."
@@ -209,10 +220,10 @@ async def answer_question(question: str) -> str:
                 except Exception:
                     tool_args = {}
 
-            # Loop detection — same call twice = break
+            # Loop detection â€” same call twice = break
             call_key = (tool_name, json.dumps(tool_args, sort_keys=True))
             if call_key in seen_calls:
-                print(f"  [Loop detected] {tool_name} repeated — returning last result")
+                print(f"  [Loop detected] {tool_name} repeated â€” returning last result")
                 return _format_final(last_tool_result, question)
             seen_calls.add(call_key)
 
@@ -237,9 +248,9 @@ async def lifespan(app: FastAPI):
     print("\n[Startup] Loading MCP tools...")
     _tool_definitions = await load_tools()
     _tool_names       = {t["function"]["name"] for t in _tool_definitions}
-    print(f"[Startup] Ready — {len(_tool_definitions)} tools loaded.")
-    print(f"[Startup] Open WebUI → http://host.docker.internal:8000/v1")
-    print(f"[Startup] Browser   → http://localhost:8000\n")
+    print(f"[Startup] Ready â€” {len(_tool_definitions)} tools loaded.")
+    print(f"[Startup] Open WebUI â†’ http://host.docker.internal:8000/v1")
+    print(f"[Startup] Browser   â†’ http://localhost:8000\n")
     yield
 
 
@@ -313,7 +324,7 @@ async def index():
     if html_path.exists():
         return HTMLResponse(html_path.read_text(encoding="utf-8"))
     return HTMLResponse(
-        "<h1>chat.html not found — place it in the same folder as mcp_bridge.py</h1>"
+        "<h1>chat.html not found â€” place it in the same folder as mcp_bridge.py</h1>"
     )
 
 

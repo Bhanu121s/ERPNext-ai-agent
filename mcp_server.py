@@ -1,11 +1,10 @@
-"""
+﻿"""
 mcp_server.py 
 Tools:
   - get_schema      : fetch live column names for any table
   - run_sql         : execute a SELECT query
   - search_entity   : dual-table search (customer + supplier simultaneously)
   - get_summary     : pre-built business dashboard
-  - get_unpaid      : pre-built unpaid/overdue invoice list
   - get_top         : pre-built top customers/suppliers ranking
   - get_trend       : pre-built monthly trend
 """
@@ -67,7 +66,7 @@ def get_connection():
 
 
 def _execute(query: str) -> tuple:
-    """Returns (rows, error). Safe — SELECT only, whitelist enforced."""
+    """Returns (rows, error). Safe â€” SELECT only, whitelist enforced."""
     q = query.strip()
     if not q.upper().startswith("SELECT"):
         return [], "Only SELECT queries allowed."
@@ -98,41 +97,9 @@ def _fmt(rows: list) -> str:
         for k, v in row.items():
             if v is None or v == "":
                 continue
-            parts.append(f"{k}: ₹{v:,.2f}" if isinstance(v, float) else f"{k}: {v}")
+            parts.append(f"{k}: â‚¹{v:,.2f}" if isinstance(v, float) else f"{k}: {v}")
         lines.append(f"{i}. " + " | ".join(parts))
     return f"{len(rows)} row(s):\n" + "\n".join(lines)
-
-
-def _sql_text(value: str) -> str:
-    """Escape text for the small SELECT-only helpers in this file."""
-    return str(value).replace("\\", "\\\\").replace("'", "''")
-
-
-def _normalize_invoice_type(invoice_type: str) -> str:
-    value = (invoice_type or "both").strip().lower()
-    if value in ("sales", "sale", "customer", "customers", "receivable", "receivables"):
-        return "sales"
-    if value in ("purchase", "purchases", "supplier", "suppliers", "payable", "payables"):
-        return "purchase"
-    return "both"
-
-
-def _status_clause(status_filter: str) -> str:
-    value = (status_filter or "unpaid_overdue").strip().lower().replace("-", "_")
-    if value in ("overdue", "late"):
-        return "`status` = 'Overdue'"
-    if value in ("unpaid",):
-        return "`status` = 'Unpaid'"
-    return "`status` IN ('Unpaid','Overdue')"
-
-
-def _safe_limit(limit: int) -> int:
-    try:
-        value = int(limit)
-    except Exception:
-        value = 20
-    return max(1, min(value, 100))
-
 
 # ---------------------------------------------------------------------------
 # SCHEMA CACHE (refreshes every 5 min)
@@ -170,7 +137,7 @@ def _get_full_schema() -> str:
 
 
 # ---------------------------------------------------------------------------
-# TOOL 1 — get_schema
+# TOOL 1 â€” get_schema
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
@@ -186,7 +153,7 @@ def get_schema(table_name: str) -> str:
       tabPayment Entry, tabJournal Entry,
       tabStock Entry, tabStock Ledger Entry, tabBin
 
-    CRITICAL COLUMN REFERENCE (memorize — avoids wrong column names):
+    CRITICAL COLUMN REFERENCE (memorize â€” avoids wrong column names):
 
     tabPurchase Invoice:
       name, supplier, grand_total, outstanding_amount,
@@ -228,7 +195,7 @@ def get_schema(table_name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# TOOL 2 — run_sql
+# TOOL 2 â€” run_sql
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
@@ -238,15 +205,15 @@ def run_sql(query: str) -> str:
     Only SELECT is allowed. INSERT/UPDATE/DELETE/DROP are blocked.
 
     ================================================================
-    NON-NEGOTIABLE SQL RULES — violating these causes wrong answers:
+    NON-NEGOTIABLE SQL RULES â€” violating these causes wrong answers:
     ================================================================
 
-    RULE 1 — BACKTICKS ON EVERYTHING:
+    RULE 1 â€” BACKTICKS ON EVERYTHING:
       Every table name and column name must be wrapped in backticks.
       WRONG : SELECT grand_total FROM tabSales Invoice WHERE docstatus=1
       CORRECT: SELECT `grand_total` FROM `tabSales Invoice` WHERE `docstatus`=1
 
-    RULE 2 — ALWAYS FILTER docstatus = 1:
+    RULE 2 â€” ALWAYS FILTER docstatus = 1:
       All transactional tables have draft/cancelled records (docstatus 0 and 2).
       Without this filter you count cancelled invoices too.
       ALWAYS add: WHERE `docstatus` = 1
@@ -254,42 +221,42 @@ def run_sql(query: str) -> str:
       tabPayment Entry, tabStock Entry, tabJournal Entry,
       tabPurchase Invoice Item, tabSales Invoice Item
 
-    RULE 3 — SUPPLIER vs CUSTOMER TABLE (MOST CRITICAL):
-      SUPPLIER → ALWAYS use `tabPurchase Invoice`, column `supplier`
-      CUSTOMER → ALWAYS use `tabSales Invoice`, column `customer`
+    RULE 3 â€” SUPPLIER vs CUSTOMER TABLE (MOST CRITICAL):
+      SUPPLIER â†’ ALWAYS use `tabPurchase Invoice`, column `supplier`
+      CUSTOMER â†’ ALWAYS use `tabSales Invoice`, column `customer`
       NEVER query tabSales Invoice for a supplier.
       NEVER query tabPurchase Invoice for a customer.
-      When unsure → use search_entity tool instead of guessing.
+      When unsure â†’ use search_entity tool instead of guessing.
       If the user only says "invoice/invoices" and does NOT clearly say
       sales/customer/receivable or purchase/supplier/payable, treat it as
       BOTH sales and purchase invoices. Do not default to Sales Invoice.
-      For unpaid/overdue/outstanding invoice LISTS or specific party checks,
-      use get_unpaid with invoice_type='both' and party_name when needed.
-      For analytical questions asking who has most/highest/top unpaid invoices,
-      use run_sql with GROUP BY, COUNT(*), ORDER BY, and LIMIT instead.
+      For all unpaid/overdue/outstanding invoice questions, use run_sql.
+      If sales vs purchase is unclear, run one Sales Invoice query and one
+      Purchase Invoice query separately, then compare or combine the results.
+      Use GROUP BY, COUNT(*), ORDER BY, and LIMIT for ranking questions.
 
-    RULE 4 — NAME FILTERS MUST USE LIKE:
+    RULE 4 â€” NAME FILTERS MUST USE LIKE:
       WRONG : WHERE `supplier` = 'FMS Traders'
       CORRECT: WHERE `supplier` LIKE '%FMS Traders%'
       WRONG : WHERE `customer` = 'Golden Twist'
       CORRECT: WHERE `customer` LIKE '%Golden Twist%'
 
-    RULE 5 — STATUS FILTERS:
+    RULE 5 â€” STATUS FILTERS:
       Overdue only         : WHERE `status` = 'Overdue'
       Unpaid only          : WHERE `status` = 'Unpaid'
       Both unpaid+overdue  : WHERE `status` IN ('Unpaid', 'Overdue')
       ONLY use IN ('Unpaid','Overdue') when user says "unpaid or overdue" or "outstanding".
-      When user says just "unpaid" → use ONLY status = 'Unpaid'
-      When user says just "overdue" → use ONLY status = 'Overdue'
+      When user says just "unpaid" â†’ use ONLY status = 'Unpaid'
+      When user says just "overdue" â†’ use ONLY status = 'Overdue'
 
-    RULE 6 — CORRECT AMOUNT COLUMNS:
-      Amount still owed    → `outstanding_amount`  (unpaid portion)
-      Total invoice value  → `grand_total`          (full amount billed)
-      Tax charged          → `total_taxes_and_charges`
+    RULE 6 â€” CORRECT AMOUNT COLUMNS:
+      Amount still owed    â†’ `outstanding_amount`  (unpaid portion)
+      Total invoice value  â†’ `grand_total`          (full amount billed)
+      Tax charged          â†’ `total_taxes_and_charges`
       NEVER use `grand_total` when asking about unpaid/outstanding amounts.
-      NEVER use `taxes_and_charges` — the correct column is `total_taxes_and_charges`.
+      NEVER use `taxes_and_charges` â€” the correct column is `total_taxes_and_charges`.
 
-    RULE 7 — NO INVENTED DATE FILTERS:
+    RULE 7 â€” NO INVENTED DATE FILTERS:
       NEVER add a date/time filter unless the user explicitly mentions
       a date, month, year, or time period.
       "how many invoices does X have" = ALL records, no date limit.
@@ -297,39 +264,39 @@ def run_sql(query: str) -> str:
       NEVER use hardcoded dates like '2025-06-05'.
       ONLY use CURDATE(), MONTH(), YEAR() when user says "this month/year".
 
-    RULE 8 — RANKING / SUPERLATIVES:
-      highest/most/maximum → ORDER BY ... DESC LIMIT 1
-      lowest/least/minimum → ORDER BY ... ASC LIMIT 1
-      top N                → ORDER BY ... DESC LIMIT N
-      oldest               → ORDER BY `posting_date` ASC LIMIT 1
-      newest/latest        → ORDER BY `posting_date` DESC LIMIT 1
-      For "who has the most unpaid/overdue invoices", use run_sql, not
-      get_unpaid. The user is asking for a grouped ranking, not an invoice list.
+    RULE 8 â€” RANKING / SUPERLATIVES:
+      highest/most/maximum â†’ ORDER BY ... DESC LIMIT 1
+      lowest/least/minimum â†’ ORDER BY ... ASC LIMIT 1
+      top N                â†’ ORDER BY ... DESC LIMIT N
+      oldest               â†’ ORDER BY `posting_date` ASC LIMIT 1
+      newest/latest        â†’ ORDER BY `posting_date` DESC LIMIT 1
+      For "who has the most unpaid/overdue invoices", use run_sql.
+      The user is asking for a grouped ranking, not an invoice list.
       If sales vs purchase is unclear, run one grouped Sales Invoice query and
       one grouped Purchase Invoice query separately, then compare the top rows.
 
-    RULE 9 — ITEM-LEVEL DETAILS:
-      Items on a specific invoice → use child table + parent filter:
+    RULE 9 â€” ITEM-LEVEL DETAILS:
+      Items on a specific invoice â†’ use child table + parent filter:
         tabPurchase Invoice Item WHERE `parent` = 'PINV-XXXX'
         tabSales Invoice Item   WHERE `parent` = 'INV-XXXX'
 
-    RULE 10 — STOCK:
-      Current stock level → `tabBin`, column `actual_qty`
-      Stock movements     → `tabStock Ledger Entry`
+    RULE 10 â€” STOCK:
+      Current stock level â†’ `tabBin`, column `actual_qty`
+      Stock movements     â†’ `tabStock Ledger Entry`
 
-    RULE 11 — PAYMENTS:
-      Payments sent to suppliers   → tabPayment Entry WHERE `payment_type` = 'Pay'
-      Payments received from customers → tabPayment Entry WHERE `payment_type` = 'Receive'
-      Amount column → `paid_amount`
+    RULE 11 â€” PAYMENTS:
+      Payments sent to suppliers   â†’ tabPayment Entry WHERE `payment_type` = 'Pay'
+      Payments received from customers â†’ tabPayment Entry WHERE `payment_type` = 'Receive'
+      Amount column â†’ `paid_amount`
 
-    RULE 12 — NO UNION:
+    RULE 12 â€” NO UNION:
       Never use UNION or UNION ALL. Use search_entity for cross-table lookups.
 
-    RULE 13 — EMPLOYEES:
-      Active employees → tabEmployee WHERE `status` = 'Active'
+    RULE 13 â€” EMPLOYEES:
+      Active employees â†’ tabEmployee WHERE `status` = 'Active'
 
     ================================================================
-    VERIFIED CORRECT EXAMPLES — match these patterns exactly:
+    VERIFIED CORRECT EXAMPLES â€” match these patterns exactly:
     ================================================================
 
     Q: how many overdue purchase invoices does FMS Traders have
@@ -341,14 +308,23 @@ def run_sql(query: str) -> str:
     NOTE: status = 'Overdue' not IN ('Unpaid','Overdue'). No date filter.
 
     Q: how many overdue invoices does Krishna Enterprises have
-    ACTION: invoice side is ambiguous. Call get_unpaid with:
-            invoice_type='both', party_name='Krishna Enterprises',
-            status_filter='overdue'
+    ACTION: invoice side is ambiguous. Use run_sql twice.
+    Sales SQL: SELECT COUNT(*) AS `overdue_count`
+               FROM `tabSales Invoice`
+               WHERE `docstatus` = 1
+               AND `customer` LIKE '%Krishna Enterprises%'
+               AND `status` = 'Overdue'
+    Purchase SQL: SELECT COUNT(*) AS `overdue_count`
+                  FROM `tabPurchase Invoice`
+                  WHERE `docstatus` = 1
+                  AND `supplier` LIKE '%Krishna Enterprises%'
+                  AND `status` = 'Overdue'
+    NOTE: Report both counts, or the combined total if the user asked broadly.
     NOTE: Do NOT search only tabSales Invoice for this question.
 
     Q: who has the most unpaid invoices
     ACTION: invoice side is ambiguous and this is a ranking question.
-            Use run_sql twice, not get_unpaid.
+            Use run_sql twice.
     Sales SQL: SELECT `customer`, COUNT(*) AS `unpaid_count`,
                       SUM(`outstanding_amount`) AS `total_outstanding`
                FROM `tabSales Invoice`
@@ -431,7 +407,7 @@ def run_sql(query: str) -> str:
     ================================================================
 
     If run_sql returns NO_RESULTS for a named entity, immediately call
-    search_entity with that name — it checks both sales and purchase tables.
+    search_entity with that name â€” it checks both sales and purchase tables.
     """
     rows, err = _execute(query)
     if err:
@@ -442,7 +418,7 @@ def run_sql(query: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# TOOL 3 — search_entity (dual-table retry)
+# TOOL 3 â€” search_entity (dual-table retry)
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
@@ -457,7 +433,7 @@ def search_entity(name: str) -> str:
     3. The user asks about an entity without specifying customer/supplier
     4. The user provides an invoice ID like SINV-XXXX or PINV-XXXX
 
-    This is the automatic dual-table retry — always call this before
+    This is the automatic dual-table retry â€” always call this before
     giving up on a name-based question.
 
     Returns invoice count, total billed, outstanding, and tax for
@@ -465,7 +441,7 @@ def search_entity(name: str) -> str:
     """
 
     # ------------------------------------------------------------------
-    # INVOICE ID DETECTION — handle SINV-XXXX / PINV-XXXX / INV-XXXX
+    # INVOICE ID DETECTION â€” handle SINV-XXXX / PINV-XXXX / INV-XXXX
     # ------------------------------------------------------------------
     invoice_prefixes = ("SINV-", "PINV-", "INV-", "ACC-SINV-", "ACC-PINV-")
     if any(name.upper().startswith(p) for p in invoice_prefixes):
@@ -492,7 +468,7 @@ def search_entity(name: str) -> str:
         return f"NO_RESULTS: Invoice '{name}' not found in Sales or Purchase invoices."
 
     # ------------------------------------------------------------------
-    # ENTITY NAME SEARCH — customer / supplier lookup
+    # ENTITY NAME SEARCH â€” customer / supplier lookup
     # ------------------------------------------------------------------
     results = []
 
@@ -510,11 +486,11 @@ def search_entity(name: str) -> str:
         r = s_rows[0]
         line = ["Found as CUSTOMER"]
         if r.get("invoice_count"): line.append(f"Invoices: {r['invoice_count']}")
-        if r.get("total_billed"):  line.append(f"Total Billed: ₹{r['total_billed']:,.2f}")
+        if r.get("total_billed"):  line.append(f"Total Billed: â‚¹{r['total_billed']:,.2f}")
         if r.get("total_outstanding") and r["total_outstanding"] > 0:
-            line.append(f"Outstanding: ₹{r['total_outstanding']:,.2f}")
+            line.append(f"Outstanding: â‚¹{r['total_outstanding']:,.2f}")
         if r.get("total_tax") and r["total_tax"] > 0:
-            line.append(f"Tax: ₹{r['total_tax']:,.2f}")
+            line.append(f"Tax: â‚¹{r['total_tax']:,.2f}")
         results.append(" | ".join(line))
 
     # Check as supplier
@@ -531,11 +507,11 @@ def search_entity(name: str) -> str:
         r = p_rows[0]
         line = ["Found as SUPPLIER"]
         if r.get("invoice_count"): line.append(f"Invoices: {r['invoice_count']}")
-        if r.get("total_billed"):  line.append(f"Total Purchased: ₹{r['total_billed']:,.2f}")
+        if r.get("total_billed"):  line.append(f"Total Purchased: â‚¹{r['total_billed']:,.2f}")
         if r.get("total_outstanding") and r["total_outstanding"] > 0:
-            line.append(f"Payable: ₹{r['total_outstanding']:,.2f}")
+            line.append(f"Payable: â‚¹{r['total_outstanding']:,.2f}")
         if r.get("total_tax") and r["total_tax"] > 0:
-            line.append(f"Tax: ₹{r['total_tax']:,.2f}")
+            line.append(f"Tax: â‚¹{r['total_tax']:,.2f}")
         results.append(" | ".join(line))
 
     if not results:
@@ -544,7 +520,7 @@ def search_entity(name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# TOOL 4 — get_summary (pre-built dashboard)
+# TOOL 4 â€” get_summary (pre-built dashboard)
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
@@ -583,11 +559,11 @@ def get_summary() -> str:
                 if val is None:
                     lines.append(f"  {label}: No data")
                 elif isinstance(val, float):
-                    lines.append(f"  {label}: ₹{val:,.2f}")
+                    lines.append(f"  {label}: â‚¹{val:,.2f}")
                 else:
                     lines.append(f"  {label}: {val}")
             except Exception as e:
-                lines.append(f"  {label}: Error — {e}")
+                lines.append(f"  {label}: Error â€” {e}")
         conn.close()
         return "\n".join(lines)
     except Exception as e:
@@ -595,106 +571,7 @@ def get_summary() -> str:
 
 
 # ---------------------------------------------------------------------------
-# TOOL 5 — get_unpaid (pre-built unpaid list)
-# ---------------------------------------------------------------------------
-
-@mcp.tool()
-def get_unpaid(
-    invoice_type: str = "both",
-    limit: int = 20,
-    party_name: str = "",
-    status_filter: str = "unpaid_overdue",
-) -> str:
-    """
-    Returns unpaid/overdue invoices directly from DB. No SQL needed.
-
-    invoice_type: 'sales'    → ONLY if user clearly asks sales/customer invoices
-                  'purchase' → ONLY if user clearly asks purchase/supplier invoices
-                  'both'     → default for ambiguous "invoice/invoices" questions
-
-    party_name: optional customer/supplier name filter. When the user asks
-                "how many overdue invoices does X have", pass X here.
-
-    status_filter: 'unpaid'          → only status = Unpaid
-                   'overdue'         → only status = Overdue
-                   'unpaid_overdue'  → both statuses (default)
-
-    IMPORTANT:
-    If the user does not clearly say sales/customer/receivable or
-    purchase/supplier/payable, use invoice_type='both'. Do not guess sales.
-    Do NOT use this tool for "who has the most", "top", "highest count",
-    or grouped ranking questions. Use run_sql for those.
-
-    Use when user asks:
-    'show unpaid invoices', 'what is overdue', 'who owes me money',
-    'which suppliers am i late paying', 'list overdue invoices',
-    'how many overdue invoices does Krishna Enterprises have'
-    """
-    invoice_type = _normalize_invoice_type(invoice_type)
-    limit = _safe_limit(limit)
-    status_sql = _status_clause(status_filter)
-    party_name = (party_name or "").strip()
-    party_like = _sql_text(party_name)
-
-    sections = []
-    totals = {"count": 0, "outstanding": 0.0}
-
-    def add_section(label: str, table: str, party_col: str) -> None:
-        where = f"`docstatus`=1 AND {status_sql}"
-        if party_name:
-            where += f" AND `{party_col}` LIKE '%{party_like}%'"
-
-        summary_rows, err = _execute(f"""
-            SELECT COUNT(*) AS `invoice_count`,
-                   COALESCE(SUM(`outstanding_amount`), 0) AS `total_outstanding`
-            FROM `{table}`
-            WHERE {where}
-        """)
-        if err:
-            sections.append(f"--- {label} ---\nERROR: {err}")
-            return
-
-        summary = summary_rows[0] if summary_rows else {}
-        count = int(summary.get("invoice_count") or 0)
-        outstanding = float(summary.get("total_outstanding") or 0)
-        totals["count"] += count
-        totals["outstanding"] += outstanding
-
-        rows, err = _execute(f"""
-            SELECT `name`, `{party_col}`, `grand_total`,
-                   `outstanding_amount`, `status`, `due_date`
-            FROM `{table}`
-            WHERE {where}
-            ORDER BY `due_date` ASC LIMIT {limit}
-        """)
-        if err:
-            sections.append(f"--- {label} ---\nERROR: {err}")
-            return
-
-        header = (
-            f"--- {label} ---\n"
-            f"Matching invoices: {count} | Total outstanding: ₹{outstanding:,.2f}"
-        )
-        sections.append(header + "\n" + _fmt(rows))
-
-    if invoice_type in ("sales", "both"):
-        add_section("Customers owe YOU", "tabSales Invoice", "customer")
-
-    if invoice_type in ("purchase", "both"):
-        add_section("YOU owe suppliers", "tabPurchase Invoice", "supplier")
-
-    prefix = ""
-    if party_name and invoice_type == "both":
-        prefix = (
-            f"Combined matches for '{party_name}': {totals['count']} invoice(s) | "
-            f"Total outstanding: ₹{totals['outstanding']:,.2f}\n\n"
-        )
-
-    return prefix + "\n\n".join(sections)
-
-
-# ---------------------------------------------------------------------------
-# TOOL 6 — get_top (pre-built ranking)
+# TOOL 5 â€” get_top (pre-built ranking)
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
@@ -703,8 +580,8 @@ def get_top(entity_type: str = "customers", metric: str = "revenue", top_n: int 
     Returns top customers or suppliers ranked by a metric. No SQL needed.
 
     entity_type : 'customers' or 'suppliers'
-    metric      : 'revenue'     → ranked by total grand_total
-                  'outstanding' → ranked by total unpaid amount
+    metric      : 'revenue'     â†’ ranked by total grand_total
+                  'outstanding' â†’ ranked by total unpaid amount
     top_n       : how many to return (default 5)
 
     Use when user asks:
@@ -730,7 +607,7 @@ def get_top(entity_type: str = "customers", metric: str = "revenue", top_n: int 
 
 
 # ---------------------------------------------------------------------------
-# TOOL 7 — get_trend (pre-built monthly trend)
+# TOOL 6 â€” get_trend (pre-built monthly trend)
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
